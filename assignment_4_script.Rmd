@@ -1,0 +1,154 @@
+---
+title: "Assignment 4"
+output: html_notebook
+---
+
+Initial setup - load packages and data
+```{r setup}
+library(pacman)
+
+p_load(tidyverse, readxl, psych, lattice, car, polycor, vcd, caret)
+
+load("data/eye_FR_testdata-1")
+load("data/eye_FR_traindata-1")
+sa.france <- load("data/SAFRANCEEWdata-1.Rdata")
+raw.data <- read_excel("data/Merged_15032016-1.xlsx")
+raw.data
+```
+Check the dataset
+```{r}
+str(traindata)
+```
+
+Question 3
+
+Begin by examining the frequencies of the dichotomous variables and the descriptives of the continuous variables
+```{r}
+traindata %>% 
+  count(lineupacc, lineuptpta, exposure)
+
+traindata %>% 
+  dplyr::select(lineupacc, confidence, lineuprt, automatic, facecomparison) %>% 
+  describeBy("lineupacc")
+```
+
+Examine the shape and correlations between the variables
+```{r}
+traindata %>% 
+  dplyr::select(confidence, lineuprt, automatic, facecomparison) %>% 
+  pairs.panels
+
+biserial(traindata[,5:8], traindata[2:4])
+
+hetcor(traindata[,2:8])
+```
+The preliminary frequencies suggest greater inaccuracies in short exposures, regardless of whether the perpetrator is absent or present. Accurate decisions tended to happen more in longer exposures regardless of whether the perpetrator was present or absent. This suggests that exposure could be a relevant variable in the analysis. Descriptives also suggest mean differences in the continuous data between accurate and inaccurate decisions. Correlations also suggest that perpetrator presence or absence, exposure and confidence might all be negatively associated with accurate decisions in a lineup. None of the independent variables appear to covary strongly.
+
+Now examine the shape of the relationships between the dependent variable, accuracy, and the other variables.
+
+Begin with a mosaic matrix that looks at the relationship between the dichotomous variables. This reinforces what was seen in the frequency counts - that accuracy seems to be related to longer exposure. Additionally, it looks like participants were more accurate when perpetrators were absent and less accurate when perpetrators were present in the lineup. These trends are reinforced by the bar graphs of accuracy against exposure and perpetrator presence or absence.
+```{r}
+mosaic(~ lineupacc + lineuptpta + exposure, data = traindata, main = "Stats", shade = T, legend = T)
+
+ggplot(traindata) +
+  geom_bar(mapping = aes(x = lineupacc, fill = exposure), position = "dodge")
+
+ggplot(traindata) +
+  geom_bar(mapping = aes(x = lineupacc, fill = lineuptpta), position = "dodge")
+```
+
+Next, look at the relationship between accuracy and the dependent variables, using boxplots. It looks like confidence may be related to accuracy, but the other variables are not. This is in keeping with what the correlation matrices showed.
+
+```{r}
+ggplot(traindata, aes(lineupacc, confidence)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .4) +
+  facet_grid(~lineupacc)
+
+ggplot(traindata, aes(lineupacc, lineuprt)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .4) +
+  facet_grid(~lineupacc)
+
+ggplot(traindata, aes(lineupacc, facecomparison)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .4) +
+  facet_grid(~lineupacc)
+
+ggplot(traindata, aes(lineupacc, automatic)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .4) +
+  facet_grid(~lineupacc)
+```
+Based on the examination above, the data can be fit to models using exposure, perpetrator absence or presence, and confidence.
+
+Question 4
+
+4a. Begin by creating a model that includes the presence/absence of the perpetrator and the exposure time, as those variables are part of the study design.
+```{r}
+null <- glm(lineupacc ~ lineuptpta + exposure, family = "binomial", data = traindata)
+summary(null)
+```
+
+4b. Next create a model that includes the expected interactions between the perpetrator presence and face comparison and rapid recognition, as well as confidence since preliminary examinations suggested it may be relevant.
+```{r}
+model1.train <- glm(lineupacc ~ lineuptpta*facecomparison + lineuptpta*automatic + exposure + confidence, family = "binomial", data = traindata)
+summary(model1.train)
+
+model1.test <- glm(lineupacc ~ lineuptpta*facecomparison + lineuptpta* automatic + exposure + as.numeric(confidence), family = "binomial", data = testdata)
+summary(model1.test)
+
+1-pchisq(null$deviance,model1.train$df.residual)
+```
+
+4c. The AIC providees an estimate of the quality of the model. A lower AIC suggests a better model. The training model has a much lower AIC than the null model (80.253 vs. 126.84), suggesting that it is a better fit. The test model (AIC = 93.637) is also an improvement over the null model, though not as good as the training model. In the training model, better face comparison is associated with greater accuracy (p < .05), and so is automatic (rapid) recognition when the perpetrator is present (p < .001). Generally, though, automatic recognition is associated with less accuracy (p < .001). Short exposure (p < .001) and higher face comparison when a perpetrator is present (p < .001) are also associated with inaccuracy. Interestingly, face comparison alone is not associated with accuracy in the test model, though higher confidence is associated with more accurate decisions (p < .05). All other relationships that were significant in the training model are significant, though more weakly so, in the test model. A chi-square test of the null and training models suggests that the training model is significantly better than the null model.Generally, it seems that participants were not great witnesses, but that they were able to be more accurate under certain conditions. For example, longer exposure time was associated with more accurate decisions, which makes sense because this variable measured how long participants viewed the crime; more exposure to the crime was related to more accurate decisions. Additionally the presence of the perpetrator in the lineup was associated with more accurate decisions when the participant was able to recognize the perpetrator accurately, but not when the participant took time to compare features. This also makes sense, as automatic regonition and face comparison oppose one another - perhaps participants' rapid recognition is a result of recognizing that the perpetrator is present, whereas perpetrator absence would result in longer scanning of faces in an effort to find a person not present. Longer face comparisons when a perpetrator is present could suggest difficulty with recognition of the perpetator, which could be why it is associated with more inaccurate predictions.
+
+Question 5
+
+5a. Begin by creating the model asked for in the assignment, then create a dataframe for a confidence level of 80%. 
+```{r}
+model2 <- glm(lineupacc ~ confidence + lineuptpta, family = "binomial", data = traindata)
+summary(model2)
+
+predict.tp <- data.frame(confidence = 80, lineuptpta = "tp")
+```
+
+Use these dataframes to predict the logit, probability, and odds ratios for accuracy at a confidence of 80% both in the presence (lineuptpta = "tp") and absence (lineuptpta = "ta") of the perpetrator.
+```{r}
+predict(model2, newdata = predict.tp)
+
+predict(model2, 
+        newdata = predict.tp, type = "response") 
+
+x.tp <- predict(model2, 
+             newdata = predict.tp, type="response")
+odds.tp <- x.tp/(1-x.tp)  # to get the answer in odds
+odds.tp
+
+predict.ta <- data.frame(confidence = 80, lineuptpta = "ta")
+
+predict(model2, newdata = predict.ta)
+
+predict(model2, 
+        newdata = predict.ta) # logit
+predict(model2, 
+        newdata = predict.ta, type = "response") # probability
+x.ta <- predict(model2, 
+             newdata = predict.ta, type="response")
+odds.ta <- x.ta/(1-x.ta)  # to get the answer in odds
+odds.ta
+
+exp(coefficients(model2))
+```
+
+4b. Create a confusion matrix using only observations with complete data.
+```{r}
+complete.train <- traindata %>% 
+  na.omit() 
+pred.prob <- predict(model2, complete.train, type = "response")
+rounded <- as.factor(round(pred.prob, 0))
+table(rounded, complete.train$lineupacc)
+confusionMatrix(rounded, as.factor(complete$lineupacc), positive = "1")
+```
+
+
