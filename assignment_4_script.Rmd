@@ -7,7 +7,7 @@ Initial setup - load packages and data
 ```{r setup}
 library(pacman)
 
-p_load(tidyverse, readxl, psych, lattice, car, polycor, vcd, caret)
+p_load(tidyverse, readxl, psych, lattice, car, polycor, vcd, caret, broom)
 
 load("data/eye_FR_testdata-1")
 load("data/eye_FR_traindata-1")
@@ -17,6 +17,8 @@ raw.data
 ```
 Check the dataset
 ```{r}
+str(traindata)
+traindata$lineupacc <- as.factor(traindata$lineupacc)
 str(traindata)
 ```
 
@@ -105,7 +107,7 @@ summary(model1.test)
 
 Question 5
 
-5a. Begin by creating the model asked for in the assignment, then create a dataframe for a confidence level of 80%. 
+5a. Begin by creating the model asked for in the assignment, then create a dataframe for a confidence level of 80% when the perpetrator is present. 
 ```{r}
 model2 <- glm(lineupacc ~ confidence + lineuptpta, family = "binomial", data = traindata)
 summary(model2)
@@ -115,31 +117,33 @@ predict.tp <- data.frame(confidence = 80, lineuptpta = "tp")
 
 Use these dataframes to predict the logit, probability, and odds ratios for accuracy at a confidence of 80% both in the presence (lineuptpta = "tp") and absence (lineuptpta = "ta") of the perpetrator.
 ```{r}
-predict(model2, newdata = predict.tp)
+logit.tp <- predict(model2, newdata = predict.tp)
 
-predict(model2, 
+probability.tp <- predict(model2, 
         newdata = predict.tp, type = "response") 
 
 x.tp <- predict(model2, 
              newdata = predict.tp, type="response")
 odds.tp <- x.tp/(1-x.tp)  # to get the answer in odds
-odds.tp
 
 predict.ta <- data.frame(confidence = 80, lineuptpta = "ta")
 
-predict(model2, newdata = predict.ta)
+logit.ta <- predict(model2, newdata = predict.ta)
 
-predict(model2, 
-        newdata = predict.ta) # logit
-predict(model2, 
+probability.ta <- predict(model2, 
         newdata = predict.ta, type = "response") # probability
 x.ta <- predict(model2, 
              newdata = predict.ta, type="response")
 odds.ta <- x.ta/(1-x.ta)  # to get the answer in odds
-odds.ta
 
-exp(coefficients(model2))
+tidy(lr.tp.outcomes <- cbind(logit.tp, probability.tp, odds.tp))
+
+tidy(lr.ta.outcomes <- cbind(logit.ta, probability.ta, odds.ta))
+
+tidy(exp(coefficients(model2)))
 ```
+So the loglinear of the accuracy model with the perpetrator present is 0.05. Additionally, when the perpetrator is present the participant's chance of making an accurate decision in a lineup was just over 0.5, and odds of accurately naming the perpetrator suggests accurate and inaccurate decisions were nearly equally likely! This is not good news. Data look better when the perpetrator is not present - a .75 chance of an accurate decision, or 3:1 odds of an accurate decision. Partial odds suggest that the presence of the perpetrator in a lineup decreases the odds of an accurate decision by a ratio of .35:1.
+
 
 4b. Create a confusion matrix using only observations with complete data.
 ```{r}
@@ -148,7 +152,8 @@ complete.train <- traindata %>%
 pred.prob <- predict(model2, complete.train, type = "response")
 rounded <- as.factor(round(pred.prob, 0))
 table(rounded, complete.train$lineupacc)
-confusionMatrix(rounded, as.factor(complete$lineupacc), positive = "1")
+pred.prob2 <- predict(model2, traindata, type = "response")
+tidy(confusionMatrix(as.factor(as.numeric(pred.prob2 >= 0.5)), as.factor(traindata$lineupacc)))
 ```
 
-
+As can be seen from the confusion matrix, sensitivity is 0.56, meaning that only about 56% of actual perpetrators were correctly identified - slightly better than chance. Specificity, or the number of correctly identified negatives, is 0.65, meaning that participants were able to recognize lineups in which there were no perpetrators 65% of the time. Again, the statistics highlight the dubious validity of witness accounts.
